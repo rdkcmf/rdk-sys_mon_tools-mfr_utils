@@ -36,13 +36,26 @@
     #include "pace_DFAST2_prod_header_v3.2.h"
 #endif
 
+#if defined(USE_SAM_MFR)
+    #include "iarmUtil.h"
+    #include "libIARM.h"
+    #include "libIBus.h"
+    #include "sam_mfr_common.h"
+    #include "sam_mfr_api.h"
+#endif
+
 #include "sys_mfr_utils.h"
 
 #define NVRAM_TEST_SIZE     128
 
 #if defined(YOCTO_BUILD)
+#if defined(USE_SAM_MFR)
+    const char* validParams[] = {"--CurrentImageFilename", "--FlashedFilename","--PDRIVersion", "--FlashImage"};
+    const int numberOfParams = 4;
+#else
     const char* validParams[] = {"--CurrentImageFilename", "--FlashedFilename","--PDRIVersion"};
     const int numberOfParams = 3;
+#endif
 #else
     const char* validParams[] = {"--CurrentImageFilename", "--FlashedFilename"};
     const int numberOfParams = 2;
@@ -56,6 +69,9 @@ void displayHelp() {
      printf("%5s -> %s \n","--FlashedFilename", "Get current flashed imagename ");
 #if defined(YOCTO_BUILD)
      printf("%5s -> %s \n","--PDRIVersion", "Get current PDRIVersion ");
+#if defined(USE_SAM_MFR)
+     printf("%5s %s %s -> %s \n","--FlashImage", "ImageName", "ImagePath", "Get current PDRIVersion ");
+#endif
 #endif
 
 }
@@ -95,6 +111,8 @@ void getCurrentRunningFileName() {
         result = vivid_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_ARRIS_MFR)
         result = motorola_mfr_read_normal_nvram(eType, &pNvRamData);
+    #elif defined(USE_SAM_MFR)
+        result = sam_mfr_read_normal_nvram(eType, &pNvRamData);
     #else
         result = vl_mfr_read_normal_nvram(eType, &pNvRamData);
     #endif
@@ -127,6 +145,8 @@ void getCurrentFlashedFileName() {
         result = vivid_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_ARRIS_MFR)
         result = motorola_mfr_read_normal_nvram(eType, &pNvRamData);
+    #elif defined(USE_SAM_MFR)
+        result = sam_mfr_read_normal_nvram(eType, &pNvRamData);
     #else
         result = vl_mfr_read_normal_nvram(eType, &pNvRamData);
     #endif
@@ -142,6 +162,56 @@ void getCurrentFlashedFileName() {
     return ;
 }
 
+#if defined(USE_SAM_MFR)
+int is_running = 1;
+
+void notifyCallback(mfrUpgradeStatus_t status, void *data) {
+    if (status.error == mfrERR_NONE) {
+        switch (status.progress) {
+            case mfrUPGRADE_PROGRESS_STARTED:
+               printf("flash_image: progress percentage %d\n", status.percentage);
+               break;
+            case mfrUPGRADE_PROGRESS_COMPLETED:
+               is_running = 0;
+               printf("flash_image: progress percentage %d\n", status.percentage);
+               printf("flash_image: completed\n");
+               break;
+            default:
+               is_running = 0;
+               printf("flash_image: failed or aborted\n");
+               break;
+        }
+    } else {
+        is_running = 0;
+        printf("\n FAILED :%x ", status.error);
+    }
+}
+
+void flashImage(char *name, char *path){
+    mfrImageType_t type = 0;
+    mfrUpgradeStatusNotify_t notify;
+    mfrError_t result = mfrERR_NONE;
+
+    if (!name || !path) {
+       displayHelp();
+       return;
+    }
+
+    notify.interval = 1;
+    notify.cb = notifyCallback;
+    result = mfrWriteImage(name, path, type, notify);
+
+    if( result != mfrERR_NONE ){
+        printf("\n FAILED :%x ", result);
+        return;
+    }
+
+    while (is_running) {
+        sleep(1);
+    }
+}
+#endif
+
 #if defined(YOCTO_BUILD)
 void getPDRIVersion(){
 
@@ -152,6 +222,7 @@ void getPDRIVersion(){
 
     mfr_type = mfrSERIALIZED_TYPE_PDRIVERSION;
     status = mfrGetSerializedData(mfr_type,&data);
+
     if( status != mfrERR_NONE ){
         printf("\n FAILED :%x ",status);
         return;
@@ -171,10 +242,17 @@ int main(int argc, char *argv[])
 
     int paramIndex = 0;
 
+#if defined(USE_SAM_MFR)
+    if (argc < 2 || argc > 5) {
+        displayHelp();
+        return -1;
+    }
+#else
     if (argc != 2) {
         displayHelp();
         return -1;
     }
+#endif
 
     paramIndex = validateParams(argv[1]);
 
@@ -182,6 +260,31 @@ int main(int argc, char *argv[])
         displayHelp();
         return -1;
     }
+
+#if defined(USE_SAM_MFR)
+    FILE fp_old = *stdout;  // preserve the original stdout
+    IARM_Result_t retCode = IARM_RESULT_SUCCESS;
+    
+    // redirect stdout to null to avoid printing debug prints from other modules
+    *stdout = *fopen("/dev/null","w");
+    retCode = IARM_Bus_Init(IARM_BUS_SAMMFRUTIL_NAME);
+    if (retCode != IARM_RESULT_SUCCESS)
+    {
+        printf("Error initializing IARM. error code : %d\n", retCode);
+    }
+    else
+    {
+        retCode = IARM_Bus_Connect();
+        if (retCode != IARM_RESULT_SUCCESS)
+        {
+            printf("Error connecting to IARM bus. error code : %d\n", retCode);
+            IARM_Bus_Term();
+            return -1;
+        }
+    }
+    *stdout=fp_old;  // restore stdout 
+#endif
+
 
     switch(paramIndex) {
         /*Check for validParams array for parameter name mapping*/
@@ -195,12 +298,27 @@ int main(int argc, char *argv[])
         case 2 :
             getPDRIVersion();
             break;
+#if defined(USE_SAM_MFR)
+        case 3 :
+            flashImage(argv[2], argv[3]);
+            break;
+#endif
 #endif
         default :
             displayHelp();
             break;
 
     }
+
+#if defined(USE_SAM_MFR)
+    // redirect stdout to null to avoid printing debug prints from other modules
+    fp_old = *stdout;
+    *stdout = *fopen("/dev/null","w");
+    IARM_Bus_Disconnect();
+    IARM_Bus_Term();
+    *stdout=fp_old;  // restore stdout 
+#endif
+
     return 0;
 }
 

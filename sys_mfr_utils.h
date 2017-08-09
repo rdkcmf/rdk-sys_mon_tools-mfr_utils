@@ -22,3 +22,7 @@ void getCurrentRunningFileName(void);
 #if defined(YOCTO_BUILD)
     void getPDRIVersion(void);
 #endif
+
+#if defined(USE_SAM_MFR)
+    #define IARM_BUS_SAMMFRUTIL_NAME "SamMfrUtil"
+#endif
