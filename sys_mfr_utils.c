@@ -107,6 +107,8 @@ void getCurrentRunningFileName() {
         result = intel_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_CISCO_MFR)
         result = cisco_mfr_read_normal_nvram(eType, &pNvRamData);
+    #elif defined(USE_CISCOXID_MFR)
+        result = getFlashFileName(&pNvRamData);
     #elif defined(USE_VIVID_MFR)
         result = vivid_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_ARRIS_MFR)
@@ -141,6 +143,8 @@ void getCurrentFlashedFileName() {
         result = intel_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_CISCO_MFR)
         result = cisco_mfr_read_normal_nvram(eType, &pNvRamData);
+    #elif defined(USE_CISCOXID_MFR)
+        result = getFlashFileName(&pNvRamData);
     #elif defined(USE_VIVID_MFR)
         result = vivid_mfr_read_normal_nvram(eType, &pNvRamData);
     #elif defined(USE_ARRIS_MFR)
@@ -234,6 +238,29 @@ void getPDRIVersion(){
             printf("%c",data.buf[i]);
         printf("\n");
     }
+}
+#endif
+
+// get the flased and running image name using mfr serialized data api since cisco xid mfr does not support cisco_mfr_read_normal_nvram() api 
+#if defined(USE_CISCOXID_MFR)
+VL_MFR_API_RESULT getFlashFileName(VL_NVRAM_DATA * pNvRamData)
+{
+    mfrSerializedType_t mfr_type;
+    mfrError_t status = mfrERR_NONE;
+    mfrSerializedData_t data;
+    int i;
+
+    mfr_type = mfrSERIALIZED_TYPE_SOFTWAREVERSION;
+    status = mfrGetSerializedData(mfr_type,&data);
+
+    if( status != mfrERR_NONE ){
+        return  VL_MFR_API_RESULT_FAILED;
+    }
+
+    pNvRamData->pData=data.buf;
+    pNvRamData->nBytes=data.bufLen;
+
+    return VL_MFR_API_RESULT_SUCCESS;
 }
 #endif
 

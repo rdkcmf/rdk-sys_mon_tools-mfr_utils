@@ -26,3 +26,7 @@ void getCurrentRunningFileName(void);
 #if defined(USE_SAM_MFR)
     #define IARM_BUS_SAMMFRUTIL_NAME "SamMfrUtil"
 #endif
+
+#if defined(USE_CISCOXID_MFR)
+    VL_MFR_API_RESULT getFlashFileName(VL_NVRAM_DATA * pNvRamData);
+#endif
